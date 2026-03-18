@@ -413,22 +413,21 @@
   async function callVLM(imageBase64, allTargets, currentTarget) {
     const targetListStr = allTargets.map((t, i) => `${i + 1}. "${t}"`).join(', ');
 
-    const prompt = `Look at this image carefully. I need to find these objects in order: ${targetListStr}.
-The current target I'm looking for is "${currentTarget}".
+    const prompt = `Task: Object detection. I need to find these objects in order: ${targetListStr}.
+Current target: "${currentTarget}".
 
-Analyze the image and reply ONLY with a JSON object in this exact format, no other text:
+Reply ONLY with a valid JSON object. No explanation, no markdown formatting outside the JSON block.
+Format matches this exact schema:
 {
-  "current_found": true,
-  "current_confidence": 0.95,
-  "other_objects_found": ["object_name_1"],
-  "description": "brief description of what you see in the image"
+  "current_found": true/false,
+  "current_confidence": 0.0-1.0,
+  "other_objects_found": ["name"]
 }
 
 Rules:
-- "current_found": true if "${currentTarget}" is clearly visible in the image
-- "current_confidence": 0.0 to 1.0, your confidence that "${currentTarget}" is in the image
-- "other_objects_found": list any OTHER objects from my target list [${allTargets.join(', ')}] that you see (excluding "${currentTarget}"). Empty array if none.
-- "description": brief description of the main objects you see`;
+- "current_found": true if "${currentTarget}" is clearly visible.
+- "current_confidence": 0.0 to 1.0 (float) confidence level.
+- "other_objects_found": list strictly OTHER targets from [${allTargets.join(', ')}] visible in the image. Empty array if none.`;
 
     const body = {
       model: VLM_CONFIG.model,
@@ -447,10 +446,11 @@ Rules:
           ],
         },
       ],
-      max_tokens: 300,
+      max_tokens: 50, // Drastically reduced maximum tokens, since we only need a few JSON tokens
       temperature: 0.1,
     };
 
+    const fetchStart = performance.now();
     const response = await fetch(`${VLM_CONFIG.baseUrl}chat/completions`, {
       method: 'POST',
       headers: {
@@ -465,13 +465,16 @@ Rules:
     }
 
     const data = await response.json();
+    const fetchEnd = performance.now();
+    console.log(`[Timer] API Request: ${(fetchEnd - fetchStart).toFixed(1)}ms`);
+
     const text = data.choices?.[0]?.message?.content || '';
 
     // Parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*?\}/);
     if (!jsonMatch) {
       console.warn('Could not parse VLM response:', text);
-      return { current_found: false, current_confidence: 0, other_objects_found: [], description: text };
+      return { current_found: false, current_confidence: 0, other_objects_found: [] };
     }
 
     try {
@@ -480,11 +483,10 @@ Rules:
         current_found: Boolean(parsed.current_found),
         current_confidence: Number(parsed.current_confidence) || 0,
         other_objects_found: Array.isArray(parsed.other_objects_found) ? parsed.other_objects_found : [],
-        description: parsed.description || '',
       };
     } catch (e) {
       console.warn('JSON parse error:', e, text);
-      return { current_found: false, current_confidence: 0, other_objects_found: [], description: text };
+      return { current_found: false, current_confidence: 0, other_objects_found: [] };
     }
   }
 
@@ -499,7 +501,11 @@ Rules:
     dom.statusText.textContent = '正在分析...';
 
     try {
+      const capStart = performance.now();
       const frameData = captureFrame();
+      const capEnd = performance.now();
+      console.log(`[Timer] Frame Capture & Compress: ${(capEnd - capStart).toFixed(1)}ms`);
+
       if (!frameData) {
         state.isProcessing = false;
         return;
