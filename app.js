@@ -352,22 +352,39 @@
   }
 
   // ──────────────────────────────────────
-  //  Frame Extraction
+  //  Frame Extraction (optimized for speed)
   // ──────────────────────────────────────
+
+  // Max dimension for exported frame — 480px is plenty for object recognition
+  // and keeps base64 payload small (~20-40KB vs ~200KB at full res)
+  const FRAME_MAX_WIDTH = 480;
+  const FRAME_JPEG_QUALITY = 0.5;
 
   function captureFrame() {
     const video = dom.video;
     if (video.readyState < 2) return null;
 
+    const srcW = video.videoWidth;
+    const srcH = video.videoHeight;
+
+    // Scale down proportionally
+    let dstW = srcW;
+    let dstH = srcH;
+    if (dstW > FRAME_MAX_WIDTH) {
+      const ratio = FRAME_MAX_WIDTH / dstW;
+      dstW = FRAME_MAX_WIDTH;
+      dstH = Math.round(srcH * ratio);
+    }
+
     const canvas = dom.canvas;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = dstW;
+    canvas.height = dstH;
 
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, 0, 0, dstW, dstH);
 
-    // Export as base64 JPEG, quality 0.7
-    return canvas.toDataURL('image/jpeg', 0.7);
+    // Export as compressed JPEG
+    return canvas.toDataURL('image/jpeg', FRAME_JPEG_QUALITY);
   }
 
   function startCapture() {
