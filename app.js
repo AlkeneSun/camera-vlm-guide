@@ -13,7 +13,7 @@
 
   // ── VLM Configuration ──
   const VLM_CONFIG = {
-    model: 'Qwen/Qwen3.5-35B-A3B',
+    // model dynamically read from UI
     baseUrl: 'https://api-inference.modelscope.cn/v1/',
     apiKey: 'ms-9338a713-bf0c-4323-bacc-235bc0cb1dcc',
   };
@@ -33,6 +33,7 @@
     zhVoice: null,        // cached Chinese voice
     speechQueue: [],      // queue to avoid overlapping speech
     isSpeaking: false,
+    model: 'Qwen/Qwen3.5-35B-A3B',
   };
 
   // ── DOM References ──
@@ -41,6 +42,7 @@
     setupScreen: $('#setup-screen'),
     cameraScreen: $('#camera-screen'),
     completeScreen: $('#complete-screen'),
+    modelSelect: $('#model-select'),
     objectsInput: $('#objects-input'),
     fpsInput: $('#fps-input'),
     fpsDec: $('#fps-dec'),
@@ -63,6 +65,18 @@
     toastContainer: $('#toast-container'),
     voiceToggle: $('#voice-toggle'),
   };
+
+  // ── Remote Logging ──
+  function sendLog(message) {
+    try {
+      fetch('/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+        keepalive: true
+      }).catch(() => {});
+    } catch(e) {}
+  }
 
   // ──────────────────────────────────────
   //  Speech Synthesis Module (iOS compatible)
@@ -274,6 +288,7 @@
 
     state.fps = parseFloat(dom.fpsInput.value) || 1;
     state.confidenceThreshold = parseFloat(dom.confidenceInput.value) || 0.7;
+    state.model = dom.modelSelect.value;
     state.currentIndex = 0;
     state.history = [];
     state.isProcessing = false;
@@ -381,10 +396,15 @@
     canvas.height = dstH;
 
     const ctx = canvas.getContext('2d');
+    const t0 = performance.now();
     ctx.drawImage(video, 0, 0, dstW, dstH);
+    const t1 = performance.now();
 
     // Export as compressed JPEG
-    return canvas.toDataURL('image/jpeg', FRAME_JPEG_QUALITY);
+    const data = canvas.toDataURL('image/jpeg', FRAME_JPEG_QUALITY);
+    const t2 = performance.now();
+    
+    return { data, drawMs: t1 - t0, encodeMs: t2 - t1 };
   }
 
   function startCapture() {
@@ -430,7 +450,7 @@ Rules:
 - "other_objects_found": list strictly OTHER targets from [${allTargets.join(', ')}] visible in the image. Empty array if none.`;
 
     const body = {
-      model: VLM_CONFIG.model,
+      model: state.model,
       messages: [
         {
           role: 'user',
@@ -465,9 +485,6 @@ Rules:
     }
 
     const data = await response.json();
-    const fetchEnd = performance.now();
-    console.log(`[Timer] API Request: ${(fetchEnd - fetchStart).toFixed(1)}ms`);
-
     const text = data.choices?.[0]?.message?.content || '';
 
     // Parse JSON from response
@@ -502,20 +519,32 @@ Rules:
 
     try {
       const capStart = performance.now();
-      const frameData = captureFrame();
+      const frameResult = captureFrame();
       const capEnd = performance.now();
-      console.log(`[Timer] Frame Capture & Compress: ${(capEnd - capStart).toFixed(1)}ms`);
 
-      if (!frameData) {
+      if (!frameResult || !frameResult.data) {
         state.isProcessing = false;
         return;
       }
 
+      const frameData = frameResult.data;
       const currentTarget = state.targets[state.currentIndex];
       // Get remaining targets (current + future) for wrong-order detection
       const remainingTargets = state.targets.slice(state.currentIndex);
 
+      const vlmStart = performance.now();
       const result = await callVLM(frameData, remainingTargets, currentTarget);
+      const vlmEnd = performance.now();
+
+      // Send performance log
+      const totalProcess = (vlmEnd - capStart).toFixed(1);
+      const capTotal = (capEnd - capStart).toFixed(1);
+      const vlmTotal = (vlmEnd - vlmStart).toFixed(1);
+      const payloadSize = Math.round(frameData.length / 1024);
+      
+      const logMsg = `[PERF] Total: ${totalProcess}ms | Capture: ${capTotal}ms (Draw: ${frameResult.drawMs.toFixed(1)}ms, Encode: ${frameResult.encodeMs.toFixed(1)}ms) | Payload: ${payloadSize}KB | API: ${vlmTotal}ms`;
+      console.log(logMsg);
+      sendLog(logMsg);
 
       if (state.phase !== 'SCANNING') {
         state.isProcessing = false;

@@ -8,3 +8,6 @@ Thumbs.db
 # Editor
 .vscode/
 .idea/
+
+# Logs
+*.log

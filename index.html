@@ -31,6 +31,17 @@
         </div>
 
         <div class="config-section">
+          <label for="model-select">
+            <span class="label-text">大模型选择</span>
+            <span class="label-hint">切换使用的视觉推理模型</span>
+          </label>
+          <select id="model-select">
+            <option value="Qwen/Qwen3.5-35B-A3B" selected>Qwen3.5-35B-A3B (推荐，快)</option>
+            <option value="moonshotai/Kimi-K2.5">Kimi-K2.5 (Moonshot)</option>
+          </select>
+        </div>
+
+        <div class="config-section">
           <label for="objects-input">
             <span class="label-text">目标物体列表</span>
             <span class="label-hint">用逗号分隔，按顺序拍摄</span>

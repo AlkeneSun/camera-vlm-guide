@@ -25,7 +25,33 @@ def get_local_ip():
     except Exception:
         return "127.0.0.1"
 
-handler = http.server.SimpleHTTPRequestHandler
+import json
+
+class CustomHandler(http.server.SimpleHTTPRequestHandler):
+    def do_POST(self):
+        if self.path == '/log':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                data = json.loads(post_data.decode('utf-8'))
+                print(f"\033[94m📊 [Browser] {data.get('message', '')}\033[0m")
+            except Exception:
+                pass
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+        else:
+            self.send_error(404)
+
+    def log_message(self, format, *args):
+        # 忽略 /log 接口的默认访问日志，避免刷屏
+        if len(args) > 0 and 'POST /log' in args[0]:
+            return
+        super().log_message(format, *args)
+
+handler = CustomHandler
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 context.load_cert_chain(
