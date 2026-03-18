@@ -425,6 +425,23 @@ input[type="range"]::-webkit-slider-thumb:active {
   transform: scale(0.92);
 }
 
+/* Voice Toggle */
+#voice-toggle {
+  position: relative;
+}
+
+#voice-toggle.muted {
+  opacity: 0.5;
+}
+
+#voice-toggle.muted .voice-on {
+  display: none;
+}
+
+#voice-toggle.muted .voice-off {
+  display: flex !important;
+}
+
 /* Target Display */
 .target-display {
   display: flex;
